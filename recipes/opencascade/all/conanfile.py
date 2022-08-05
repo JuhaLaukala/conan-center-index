@@ -29,9 +29,13 @@ class OpenCascadeConan(ConanFile):
         "with_rapidjson": [True, False],
         "with_draco": [True, False],
         "with_tk": [True, False],
+        "with_tcl": [True, False],
         "with_tbb": [True, False],
         "with_opengl": [True, False],
+        "with_freetype" : [True, False],
         "extended_debug_messages": [True, False],
+        "with_occ_draw" : [True, False],
+        "with_occ_visualization" : [True, False]
     }
     default_options = {
         "shared": False,
@@ -42,9 +46,13 @@ class OpenCascadeConan(ConanFile):
         "with_rapidjson": False,
         "with_draco": False,
         "with_tk": True,
+        "with_tcl": True,
         "with_tbb": False,
         "with_opengl": True,
+        "with_freetype" : True,
         "extended_debug_messages": False,
+        "with_occ_draw" : True,
+        "with_occ_visualization" : True,
     }
 
     short_paths = True
@@ -66,9 +74,23 @@ class OpenCascadeConan(ConanFile):
             return True
 
     @property
+    def _link_tcl(self):
+        if tools.Version(self.version) >= "7.6.0":
+            return self.options.with_tcl
+        else:
+            return True
+
+    @property
     def _link_opengl(self):
         if tools.Version(self.version) >= "7.6.0":
             return self.options.with_opengl
+        else:
+            return True
+
+    @property
+    def _link_freetype(self):
+        if tools.Version(self.version) >= "7.6.0":
+            return self.options.with_freetype
         else:
             return True
 
@@ -79,6 +101,7 @@ class OpenCascadeConan(ConanFile):
     def config_options(self):
         if tools.Version(self.version) < "7.6.0":
             del self.options.with_tk
+            del self.options.with_tcl
             del self.options.with_draco
             del self.options.with_opengl
         if self.settings.os == "Windows":
@@ -91,10 +114,10 @@ class OpenCascadeConan(ConanFile):
             del self.options.fPIC
 
     def requirements(self):
-        self.requires("tcl/8.6.11")
         if self._link_tk:
             self.requires("tk/8.6.10")
-        self.requires("freetype/2.11.1")
+        if self._link_tcl:
+            self.requires("tcl/8.6.11")
         if self._link_opengl:
             self.requires("opengl/system")
         if self._is_linux:
@@ -113,6 +136,8 @@ class OpenCascadeConan(ConanFile):
             self.requires("draco/1.5.2")
         if self.options.with_tbb:
             self.requires("onetbb/2020.3")
+        if self.options.with_freetype:
+            self.requires("freetype/2.11.1")
 
     def validate(self):
         if self.settings.compiler.get_safe("cppstd"):
@@ -160,22 +185,24 @@ class OpenCascadeConan(ConanFile):
         conan_targets = []
 
         ## freetype
-        conan_targets.append("CONAN_PKG::freetype")
-        tools.replace_in_file(cmakelists, "OCCT_INCLUDE_CMAKE_FILE (\"adm/cmake/freetype\")", "")
-        tools.replace_in_file(
-            occt_csf_cmake,
-            "set (CSF_FREETYPE \"freetype\")",
-            "set (CSF_FREETYPE \"{}\")".format(" ".join(self.deps_cpp_info["freetype"].libs)))
+        if self.options.with_freetype:
+            conan_targets.append("CONAN_PKG::freetype")
+            tools.replace_in_file(cmakelists, "OCCT_INCLUDE_CMAKE_FILE (\"adm/cmake/freetype\")", "")
+            tools.replace_in_file(
+                occt_csf_cmake,
+                "set (CSF_FREETYPE \"freetype\")",
+                "set (CSF_FREETYPE \"{}\")".format(" ".join(self.deps_cpp_info["freetype"].libs)))
         ## tcl
-        conan_targets.append("CONAN_PKG::tcl")
-        tools.replace_in_file(cmakelists, "OCCT_INCLUDE_CMAKE_FILE (\"adm/cmake/tcl\")", "")
-        csf_tcl_libs = "set (CSF_TclLibs \"{}\")".format(" ".join(self.deps_cpp_info["tcl"].libs))
-        tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs     \"tcl86\")", csf_tcl_libs)
-        tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs   Tcl)", csf_tcl_libs)
-        if tools.Version(self.version) >= "7.6.0":
-            tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs   \"tcl8.6\")", csf_tcl_libs)
-        else:
-            tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs     \"tcl8.6\")", csf_tcl_libs)
+        if self._link_tcl:
+            conan_targets.append("CONAN_PKG::tcl")
+            tools.replace_in_file(cmakelists, "OCCT_INCLUDE_CMAKE_FILE (\"adm/cmake/tcl\")", "")
+            csf_tcl_libs = "set (CSF_TclLibs \"{}\")".format(" ".join(self.deps_cpp_info["tcl"].libs))
+            tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs     \"tcl86\")", csf_tcl_libs)
+            tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs   Tcl)", csf_tcl_libs)
+            if tools.Version(self.version) >= "7.6.0":
+                tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs   \"tcl8.6\")", csf_tcl_libs)
+            else:
+                tools.replace_in_file(occt_csf_cmake, "set (CSF_TclLibs     \"tcl8.6\")", csf_tcl_libs)
         ## tk
         if self._link_tk:
             conan_targets.append("CONAN_PKG::tk")
@@ -333,6 +360,7 @@ class OpenCascadeConan(ConanFile):
         cmake.definitions["BUILD_DOC_Overview"] = False
 
         cmake.definitions["USE_FREEIMAGE"] = self.options.with_freeimage
+        cmake.definitions["USE_FREETYPE"] = self.options.with_freetype
         cmake.definitions["USE_OPENVR"] = self.options.with_openvr
         cmake.definitions["USE_FFMPEG"] = self.options.with_ffmpeg
         cmake.definitions["USE_TBB"] = self.options.with_tbb
@@ -340,7 +368,9 @@ class OpenCascadeConan(ConanFile):
         if tools.Version(self.version) >= "7.6.0":
             cmake.definitions["USE_DRACO"] = self.options.with_draco
             cmake.definitions["USE_TK"] = self.options.with_tk
-            cmake.definitions["USE_OPENGL"] = self.options.with_opengl
+            cmake.definitions["USE_TCL"] = self.options.with_tcl
+            cmake.definitions["CAN_USE_OPENGL"] = self.options.with_opengl
+            cmake.definitions["CAN_USE_GLES2"] = self.options.with_opengl
 
         cmake.configure(source_folder=self._source_subfolder)
         return cmake
@@ -404,13 +434,14 @@ class OpenCascadeConan(ConanFile):
     def _get_modules_from_source_code(self):
         csf_to_conan_dependencies = {
             # Mandatory dependencies
-            "CSF_FREETYPE": {"externals": ["freetype::freetype"]},
-            "CSF_TclLibs": {"externals": ["tcl::tcl"]},
             "CSF_fontconfig": {"externals": ["fontconfig::fontconfig"] if self._is_linux else []},
             "CSF_XwLibs": {"externals": ["xorg::xorg"] if self._is_linux else []},
             # Optional dependencies
+            "CSF_FREETYPE": {"externals": ["freetype::freetype"] if self._link_freetype else []},
             "CSF_OpenGlLibs": {"externals": ["opengl::opengl"] if self._link_opengl else []},
+            "CSF_OpenGlesLibs": {"externals": ["egl::egl"] if self._link_opengl else []},
             "CSF_TclTkLibs": {"externals": ["tk::tk"] if self._link_tk else []},
+            "CSF_TclLibs": {"externals": ["tcl::tcl"]  if self._link_tcl else []},
             "CSF_FFmpeg": {"externals": ["ffmpeg::ffmpeg"] if self.options.with_ffmpeg else []},
             "CSF_FreeImagePlus": {"externals": ["freeimage::freeimage"] if self.options.with_freeimage else []},
             "CSF_OpenVR": {"externals": ["openvr::openvr"] if self.options.with_openvr else []},
